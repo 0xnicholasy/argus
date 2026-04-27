@@ -9,6 +9,9 @@
     "start": "tsx src/index.ts"
   },
   "dependencies": {
-    "@argus/shared": "*"
+    "@0glabs/0g-serving-broker": "^0.7.5",
+    "@0glabs/0g-ts-sdk": "^0.3.3",
+    "@argus/shared": "*",
+    "ethers": "6.13.1"
   }
 }
