@@ -1,0 +1,8 @@
+{
+  "private_key_path": "node-a.pem",
+  "listen": ["tls://127.0.0.1:9101"],
+  "api_addr": "127.0.0.1:9002",
+  "tcp_port": 7000,
+  "peers": [],
+  "comment": "AXL Node A (Signal). tcp_port:7000 mandatory. Pair with execution/node-b-config.json (peers points here)."
+}
