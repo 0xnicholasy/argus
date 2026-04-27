@@ -1,0 +1,7 @@
+{
+  "name": "argus-rebalance",
+  "description": "KeeperHub workflow: triggers Argus rebalance via shim, polls for swap tx hash. Implemented in P9.",
+  "version": "0.0.1",
+  "nodes": [],
+  "edges": []
+}

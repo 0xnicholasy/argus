@@ -6,8 +6,16 @@
   "engines": {
     "node": ">=20"
   },
+  "workspaces": [
+    "signal",
+    "execution",
+    "shim",
+    "packages/*"
+  ],
   "scripts": {
-    "check-gates": "tsx scripts/check-gates.ts"
+    "check-gates": "tsx scripts/check-gates.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.base.json",
+    "build:contracts": "forge build --root contracts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
