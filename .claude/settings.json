@@ -29,7 +29,10 @@
       "Bash(echo:*)",
       "Bash(grep:*)",
       "Bash(find:*)",
-      "Bash(kh:*)"
+      "Bash(kh:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx eslint:*)",
+      "Bash(shellcheck:*)"
     ],
     "deny": [
       "Bash(rm -rf /)",
