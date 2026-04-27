@@ -15,7 +15,12 @@
   "scripts": {
     "check-gates": "tsx scripts/check-gates.ts",
     "typecheck": "tsc --noEmit -p tsconfig.base.json",
-    "build:contracts": "forge build --root contracts"
+    "build:contracts": "forge build --root contracts",
+    "axl:start": "bash scripts/start-nodes.sh start",
+    "axl:stop": "bash scripts/start-nodes.sh stop",
+    "axl:status": "bash scripts/start-nodes.sh status",
+    "axl:round-trip": "bash scripts/test-round-trip.sh",
+    "measure-latency": "tsx scripts/measure-latency.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
