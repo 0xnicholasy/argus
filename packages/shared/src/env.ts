@@ -26,7 +26,7 @@ export const envSchema = z.object({
   UNICHAIN_SEPOLIA_RPC_BACKUP: blankToUndef(url.optional()),
 
   ZEROG_PROVIDER_ADDRESS: blankToUndef(addr.optional()),
-  ZEROG_MODEL: blankToUndef(nonEmpty.default("deepseek-chat-v3-0324")),
+  ZEROG_MODEL: blankToUndef(nonEmpty.default("qwen/qwen-2.5-7b-instruct")),
 
   KH_API_KEY: blankToUndef(nonEmpty.optional()),
   KH_WORKFLOW_ID: blankToUndef(nonEmpty.optional()),
