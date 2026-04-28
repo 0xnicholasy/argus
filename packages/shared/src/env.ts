@@ -36,6 +36,8 @@ export const envSchema = z.object({
   NAMESTONE_API_KEY: blankToUndef(nonEmpty.optional()),
   NAMESTONE_PARENT_DOMAIN: blankToUndef(nonEmpty.optional()),
   NAMESTONE_SUBNAME: blankToUndef(nonEmpty.default("rebalancer")),
+  REPO_URL: blankToUndef(url.optional()),
+  ERC8004_STATUS: blankToUndef(nonEmpty.default("pending")),
 
   UNIVERSAL_ROUTER: blankToUndef(addr.default("0xf70536b3bcc1bd1a972dc186a2cf84cc6da6be5d")),
   VAULT_ADDRESS: blankToUndef(addr.optional()),

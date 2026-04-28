@@ -20,13 +20,16 @@
     "axl:stop": "bash scripts/start-nodes.sh stop",
     "axl:status": "bash scripts/start-nodes.sh status",
     "axl:round-trip": "bash scripts/test-round-trip.sh",
-    "measure-latency": "tsx scripts/measure-latency.ts"
+    "measure-latency": "tsx scripts/measure-latency.ts",
+    "setup-ens": "tsx scripts/setup-ens.ts"
   },
   "devDependencies": {
+    "@namestone/namestone-sdk": "^0.2.15",
     "@types/node": "^22.0.0",
     "dotenv": "^17.0.0",
     "ethers": "6.13.1",
     "tsx": "^4.19.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "viem": "^2.48.4"
   }
 }
