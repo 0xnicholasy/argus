@@ -1,7 +1,67 @@
 {
   "name": "argus-rebalance",
-  "description": "KeeperHub workflow: triggers Argus rebalance via shim, polls for swap tx hash. Implemented in P9.",
-  "version": "0.0.1",
-  "nodes": [],
-  "edges": []
+  "description": "KeeperHub workflow: triggers Argus rebalance via shim, polls for swap tx hash.",
+  "version": "0.1.0",
+  "nodes": [
+    {
+      "id": "trigger",
+      "type": "trigger",
+      "position": { "x": 0, "y": 0 },
+      "data": {
+        "type": "trigger",
+        "config": {
+          "triggerType": "Manual"
+        }
+      }
+    },
+    {
+      "id": "call-shim",
+      "type": "action",
+      "position": { "x": 240, "y": 0 },
+      "data": {
+        "type": "action",
+        "config": {
+          "actionType": "Http",
+          "method": "POST",
+          "url": "{{env.SHIM_URL}}/trigger",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {},
+          "timeoutMs": 10000,
+          "expectStatus": [200, 202],
+          "outputs": {
+            "requestId": "$.requestId"
+          }
+        }
+      }
+    },
+    {
+      "id": "poll-result",
+      "type": "action",
+      "position": { "x": 480, "y": 0 },
+      "data": {
+        "type": "action",
+        "config": {
+          "actionType": "HttpPoll",
+          "method": "GET",
+          "url": "{{env.SHIM_URL}}/status/{{call-shim.requestId}}",
+          "intervalMs": 5000,
+          "maxAttempts": 24,
+          "successWhen": "$.status == 'done'",
+          "failWhen": "$.status == 'rejected'",
+          "outputs": {
+            "swapTxHash": "$.swapTxHash",
+            "chatId": "$.chatId",
+            "outputHash": "$.outputHash",
+            "storageRoot": "$.storageRoot"
+          }
+        }
+      }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "trigger", "target": "call-shim" },
+    { "id": "e2", "source": "call-shim", "target": "poll-result" }
+  ]
 }
