@@ -12,3 +12,4 @@ broadcast/
 .vscode/
 typechain-types/
 coverage/
+.playwright-cli/
