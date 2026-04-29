@@ -1,0 +1,31 @@
+# P16 — argus-axl-b (AXL Node B, Execution). Private only — no public services.
+#
+# Reachable from sibling Fly apps via Fly 6PN at:
+#   argus-axl-b.internal:9003    (AXL JSON API — used for diagnostics only)
+#   tls://argus-axl-b.internal:9102  (Yggdrasil tls listener)
+#
+# Node B dials node A's tls://argus-axl-a.internal:9101 at startup; that
+# wiring lives in the per-app NODE_CONFIG_JSON secret, not this file.
+
+app = 'argus-axl-b'
+primary_region = 'iad'
+
+[build]
+  dockerfile = 'Dockerfile.axl'
+
+[env]
+  AXL_ROLE = 'execution'
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 256
+
+[[services]]
+  protocol = 'tcp'
+  internal_port = 9003
+
+  [[services.tcp_checks]]
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '20s'

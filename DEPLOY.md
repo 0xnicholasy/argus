@@ -117,35 +117,62 @@ AXL API addr, poll budgets). Secrets go through `fly secrets set`:
 
 ---
 
-## AXL caveats — pick one
+## AXL deploy — Option 2 (chosen)
 
-The shim talks to AXL Node A over HTTP at `AXL_NODE_A_API`. Cloud shim
-**cannot dial your laptop's localhost**. Three options:
+Three Fly apps in `iad`:
 
-### Option 1 — collapse: shim + Node A in same Fly machine (fastest)
+| App | Public? | Internal addresses |
+|-----|---------|--------------------|
+| `argus-shim` | yes (TLS) | `argus-shim.internal:8787` |
+| `argus-axl-a` | no | `argus-axl-a.internal:9002` (API) + `tls://argus-axl-a.internal:9101` (Yggdrasil) |
+| `argus-axl-b` | no | `argus-axl-b.internal:9003` (API) + `tls://argus-axl-b.internal:9102` (Yggdrasil) |
 
-Bake the AXL daemon into `Dockerfile.shim`, run both via `tini` /
-supervisord. Set `AXL_NODE_A_API=127.0.0.1:9002`. Matches the re-plan
-fallback "collapse to single host" if AXL latency is a problem.
+### One-time bring-up
 
-Trade-off: loses the "2 nodes geographically distributed" narrative for
-Gensyn judging. Acceptable per `08-keeper-agent-design/KILL-CONDITIONS.md`.
+```bash
+cd argus
+set -a; source .env; set +a
 
-### Option 2 — separate Fly app per AXL node (best narrative)
+# 1. Cross-compile axl-node from ../04-axl-multinode/axl into argus/bin/.
+bash scripts/deploy-axl.sh build
 
-Spin `argus-axl-a` and `argus-axl-b` as their own Fly apps, peer them via
-yggdrasil tls listen on Fly's 6PN private network. Shim points at
-`argus-axl-a.internal:9002`. Two extra apps, two extra `fly.toml`s,
-~20 min more setup.
+# 2. Launch both AXL apps + stage NODE_KEY_PEM/NODE_CONFIG_JSON + deploy.
+bash scripts/deploy-axl.sh launch
 
-### Option 3 — yggdrasil tunnel from laptop
+# 3. Point shim at Node A.
+fly secrets set AXL_NODE_A_API=argus-axl-a.internal:9002 -a argus-shim
 
-Node A runs on laptop; cloud shim joins the same yggdrasil overlay so it
-can route to Node A by IPv6. Requires shim image to embed yggdrasil
-client. Complex; only worth it if you need true cross-region demo.
+# 4. Read Node A's Yggdrasil IPv6 from logs and inject as SIGNAL_PEER.
+fly logs -a argus-axl-a | grep -m1 "yggdrasil ipv6"
+fly secrets set SIGNAL_PEER=<that-ipv6> -a argus-shim
+```
 
-**Recommendation for hackathon**: Option 1 for the dry run, upgrade to
-Option 2 only if Gensyn judging needs the distributed narrative.
+Smoke from inside the shim VM (validates 6PN reachability):
+
+```bash
+fly ssh console -a argus-shim -C 'curl -sS argus-axl-a.internal:9002/topology'
+```
+
+### Subsequent ops
+
+```bash
+bash scripts/deploy-axl.sh redeploy    # both apps
+bash scripts/deploy-axl.sh secrets     # re-stage configs (e.g. peer wiring change)
+bash scripts/deploy-axl.sh status
+bash scripts/deploy-axl.sh logs a      # or 'b'
+```
+
+### Bail-out (Option 1 collapse)
+
+Apply if any of:
+- yggdrasil-over-6PN handshake fails after 1h debugging
+- inter-app `tls://...:9101` round-trip p95 >100ms
+- `*.internal` DNS flaky during `fly ssh` smoke
+
+Steps: bake axl-node into `Dockerfile.shim` (run via tini), set
+`AXL_NODE_A_API=127.0.0.1:9002`, `fly destroy argus-axl-a argus-axl-b`,
+redeploy shim. Loses the Gensyn p2p narrative but ships demo. Tracked as
+scope-cut #6 + re-plan trigger in `.claude/commands/plan.md`.
 
 ---
 

@@ -7,6 +7,8 @@ node_modules
 **/dist
 contracts
 broadcast
+# Keep bin/ available — Dockerfile.axl COPYs bin/axl-node into the image.
+# (No exclusion needed; default is to ship.)
 01-*
 02-*
 03-*

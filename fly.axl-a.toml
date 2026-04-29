@@ -1,0 +1,34 @@
+# P16 — argus-axl-a (AXL Node A, Signal). Private only — no public services.
+#
+# Reachable from sibling Fly apps via Fly 6PN at:
+#   argus-axl-a.internal:9002    (AXL JSON API — dialed by argus-shim)
+#   tls://argus-axl-a.internal:9101  (Yggdrasil tls listener — dialed by argus-axl-b)
+#
+# Runtime config + key are injected via secrets NODE_CONFIG_JSON and
+# NODE_KEY_PEM (see scripts/deploy-axl.sh). Image is shared with axl-b.
+
+app = 'argus-axl-a'
+primary_region = 'iad'
+
+[build]
+  dockerfile = 'Dockerfile.axl'
+
+# Bind to all interfaces; Fly 6PN routes argus-axl-a.internal to whichever
+# IPv6 the process listens on.
+[env]
+  AXL_ROLE = 'signal'
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 256
+
+# 6PN-only TCP check. Fails if axl-node hasn't bound 9002 within 30s.
+[[services]]
+  protocol = 'tcp'
+  internal_port = 9002
+
+  [[services.tcp_checks]]
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '20s'

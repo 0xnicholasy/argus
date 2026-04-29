@@ -1,0 +1,27 @@
+# P16 — AXL daemon image (used by both argus-axl-a and argus-axl-b).
+#
+# Approach: reuse the pre-built Linux binary at argus/bin/axl-node produced
+# by `bash scripts/deploy-axl.sh build` (cross-compiled from
+# ../04-axl-multinode/axl). Avoids cloning an upstream repo whose access
+# controls we don't want to depend on, and keeps the build reproducible.
+#
+# Runtime config + Yggdrasil keypair are injected as Fly secrets and
+# materialized to disk by axl-entrypoint.sh so we don't bake per-node
+# state into a shared image.
+FROM alpine:3.20
+
+RUN apk add --no-cache ca-certificates tini bash curl
+
+WORKDIR /app
+
+COPY bin/axl-node /usr/local/bin/axl-node
+COPY scripts/axl-entrypoint.sh /usr/local/bin/axl-entrypoint.sh
+RUN chmod +x /usr/local/bin/axl-node /usr/local/bin/axl-entrypoint.sh
+
+# Yggdrasil tls listen + AXL JSON API. tcp_port 7000 is mandated by the
+# AXL config (gossip layer) but is not exposed over Fly 6PN — peer dialing
+# happens over the tls listener on 9101/9102.
+EXPOSE 9002 9003 9101 9102
+
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["/usr/local/bin/axl-entrypoint.sh"]
