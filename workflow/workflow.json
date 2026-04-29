@@ -21,7 +21,7 @@
       "data": {
         "type": "action",
         "config": {
-          "actionType": "Http",
+          "actionType": "HTTP Request",
           "method": "POST",
           "url": "{{env.SHIM_URL}}/trigger",
           "headers": {

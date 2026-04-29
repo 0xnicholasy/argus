@@ -1,22 +1,4 @@
 #!/usr/bin/env bash
-# P9 — Register the Argus KeeperHub workflow.
-#
-# Reads workflow/workflow.json, calls `kh wf create` then `kh wf go-live`,
-# and prints the resulting workflow ID. Idempotent re-runs always create a
-# new draft — write the printed ID into .env as KH_WORKFLOW_ID before
-# `kh wf run`.
-#
-# Prerequisites (verified by scripts/check-gates.ts gate 3):
-#   - kh CLI on PATH or at $KH_BIN (default ~/go/bin/kh)
-#   - `kh auth login` completed (browser OAuth)
-#   - SHIM_URL exported (publicly reachable URL of the shim) before
-#     running `kh wf run` — workflow.json references it as ${SHIM_URL}.
-#
-# Usage:
-#   bash scripts/register-workflow.sh                 # create + go-live
-#   bash scripts/register-workflow.sh --create-only   # skip go-live
-#   KH_WORKFLOW_NAME="Argus Demo" bash scripts/register-workflow.sh
-
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -44,11 +26,22 @@ if [ ! -f "${WORKFLOW_FILE}" ]; then
 fi
 
 CREATE_ONLY=0
+FORCE_NEW=0
 for arg in "$@"; do
   case "${arg}" in
     --create-only) CREATE_ONLY=1 ;;
+    --force-new) FORCE_NEW=1 ;;
     -h|--help)
-      sed -n '2,20p' "${BASH_SOURCE[0]}"
+      cat <<USAGE
+Usage: register-workflow.sh [--create-only] [--force-new]
+
+  --create-only  Only create the draft workflow; skip go-live publish step.
+  --force-new    Create a new workflow even if one with the same name exists.
+
+Env:
+  KH_BIN              Path to kh binary (default: ~/go/bin/kh)
+  KH_WORKFLOW_NAME    Override the workflow name (default: from workflow.json)
+USAGE
       exit 0
       ;;
     *)
@@ -59,35 +52,48 @@ for arg in "$@"; do
 done
 
 if ! "${KH_BIN}" auth status >/dev/null 2>&1; then
-  echo "ERROR: 'kh auth status' failed. Run 'kh auth login' first." >&2
+  echo "ERROR: 'kh auth status' failed. Run '${KH_BIN} auth login' first (browser OAuth)." >&2
   exit 1
 fi
 
 WF_NAME="${KH_WORKFLOW_NAME:-$(jq -r '.name' "${WORKFLOW_FILE}")}"
 WF_DESC="$(jq -r '.description // ""' "${WORKFLOW_FILE}")"
 
-echo "Creating workflow: ${WF_NAME}" >&2
-TMP_BUNDLE="$(mktemp)"
-trap 'rm -f "${TMP_BUNDLE}"' EXIT
-jq '{nodes: .nodes, edges: .edges}' "${WORKFLOW_FILE}" >"${TMP_BUNDLE}"
-
-CREATE_OUT="$(
-  "${KH_BIN}" wf create \
-    --name "${WF_NAME}" \
-    --description "${WF_DESC}" \
-    --nodes-file "${TMP_BUNDLE}" \
-    --json \
-    --yes
+# Idempotency: detect an existing workflow with the same name to avoid silent duplicates.
+EXISTING_ID="$(
+  "${KH_BIN}" wf list --json 2>/dev/null \
+    | jq -r --arg n "${WF_NAME}" '[.[] | select(.name == $n)] | (.[0].id // empty)'
 )"
+if [ -n "${EXISTING_ID}" ] && [ "${FORCE_NEW}" -eq 0 ]; then
+  echo "Found existing workflow '${WF_NAME}' (id: ${EXISTING_ID})." >&2
+  echo "Skipping create. To force a new one, re-run with --force-new." >&2
+  echo "To replace nodes/edges in place, use: ${KH_BIN} wf update ${EXISTING_ID} --nodes-file <file>" >&2
+  WORKFLOW_ID="${EXISTING_ID}"
+else
+  echo "Creating workflow: ${WF_NAME}" >&2
+  TMP_BUNDLE="$(mktemp)"
+  trap 'rm -f "${TMP_BUNDLE}"' EXIT
+  # --nodes-file expects an object with both `nodes` and `edges` keys (per `kh wf create --help`).
+  jq '{nodes: .nodes, edges: .edges}' "${WORKFLOW_FILE}" >"${TMP_BUNDLE}"
 
-WORKFLOW_ID="$(echo "${CREATE_OUT}" | jq -r '.id // .workflowId // .workflow.id // empty')"
-if [ -z "${WORKFLOW_ID}" ]; then
-  echo "ERROR: could not parse workflow id from kh response:" >&2
-  echo "${CREATE_OUT}" >&2
-  exit 1
+  CREATE_OUT="$(
+    "${KH_BIN}" wf create \
+      --name "${WF_NAME}" \
+      --description "${WF_DESC}" \
+      --nodes-file "${TMP_BUNDLE}" \
+      --json \
+      --yes
+  )"
+
+  WORKFLOW_ID="$(echo "${CREATE_OUT}" | jq -r '.id // .workflowId // .workflow.id // empty')"
+  if [ -z "${WORKFLOW_ID}" ]; then
+    echo "ERROR: could not parse workflow id from kh response:" >&2
+    echo "${CREATE_OUT}" >&2
+    exit 1
+  fi
+
+  echo "Created workflow id: ${WORKFLOW_ID}" >&2
 fi
-
-echo "Created workflow id: ${WORKFLOW_ID}" >&2
 
 if [ "${CREATE_ONLY}" -eq 1 ]; then
   echo "${WORKFLOW_ID}"
