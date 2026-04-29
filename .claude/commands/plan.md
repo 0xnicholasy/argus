@@ -72,8 +72,9 @@ Sepolia ENS .eth · Namestone form (24h lag) · `kh auth login` · Base USDC fun
 | 13 | ERC-8004 Registry | `scripts/` | viem call to ERC-8004 Identity Registry w/ metadata URI (kh wallet does NOT do this — direct viem) | registration tx confirmed | 2h | — | KH stretch |
 | 14 | Demo Script | `scripts/` | `pre-stage-inference.ts` writes `demo-cache.json` bound to **immutable input hash** (vault-snapshot + timestamp window); `demo.sh` chains kh+poll+narration | full dry-run <90s | 3h | — | demo gate |
 | 15 | Demo UI (opt) | `ui/` | Next.js page: chatId badge, swap status, ENS card | page loads on `localhost:3000` | 6h | — | polish |
+| 16 | **Cloud Deploy (AXL Option 2)** | `argus/` | `Dockerfile.shim` + `Dockerfile.axl`; `fly.shim.toml` + `fly.axl-a.toml` + `fly.axl-b.toml`; `scripts/deploy-shim.sh` + `scripts/deploy-axl.sh`; 3 Fly apps (`argus-shim`, `argus-axl-a`, `argus-axl-b`) peered via Fly 6PN; KeeperHub workflow points at `https://argus-shim.fly.dev` | `curl https://argus-shim.fly.dev/health` returns 200; `fly ssh console -a argus-shim -C 'curl argus-axl-a.internal:9002/health'` 200; `kh wf run` end-to-end returns swap tx | 4h (shim 1.5h done; axl-a/b 2h; peering+secrets 0.5h) | 9,14 | KeeperHub + Gensyn |
 
-**Total: ~50.5h core + ~15h optional.**
+**Total: ~54.5h core + ~15h optional.**
 
 ---
 
@@ -373,6 +374,58 @@ Next.js page: chatId badge, `processResponse()` log, 0G Storage link, swap tx, E
 
 ---
 
+### P16 — Cloud Deploy (4h, AXL Option 2 — separate Fly apps)
+
+Files: `argus/Dockerfile.shim` (done), `argus/Dockerfile.axl` (new), `argus/fly.shim.toml` (done), `argus/fly.axl-a.toml` + `argus/fly.axl-b.toml` (new), `argus/scripts/deploy-shim.sh` (done), `argus/scripts/deploy-axl.sh` (new).
+
+**Topology** — 3 Fly apps in same region (e.g. `iad`):
+
+```
+KeeperHub workers (public internet)
+  └─ https://argus-shim.fly.dev (public)            <- Express shim
+       └─ argus-axl-a.internal:9002 (Fly 6PN)       <- AXL Node A (Signal)
+            └─ argus-axl-b yggdrasil tls peer (6PN) <- AXL Node B (Execution)
+                 └─ Unichain Sepolia (public)
+```
+
+**Why Option 2 over Option 1 (collapse) or Option 3 (laptop tunnel)**:
+
+| | Option 1 Collapse | **Option 2 (chosen)** | Option 3 Yggdrasil tunnel |
+|---|---|---|---|
+| Gensyn p2p narrative | weak (single host) | **strong (real swarm)** | strong but fragile |
+| Setup time | 10 min | 30 min | 60 min |
+| Demo dependence on laptop | none | none | **laptop must stay online** |
+| Inter-node latency | <5ms | 5-30ms (6PN same region) | 50-300ms |
+| 90s budget risk | safest | safe | risky |
+
+Option 1 collapses Gensyn submission to "single-node app importing AXL lib" → likely scored low or rejected. Option 2 keeps real send/recv between two machines with `iad↔iad` 6PN latency well under demo budget.
+
+**Setup steps**:
+
+1. `Dockerfile.axl` — base on `Dockerfile.shim`, replace `CMD` with AXL daemon entry (`axl serve --config /app/node-{a,b}-config.json`).
+2. `fly.axl-a.toml` / `fly.axl-b.toml` — no `[http_service]` (private only); expose `9002` on internal IPv6 only; `[mounts]` not needed (stateless); embed Yggdrasil keypairs as Fly secrets.
+3. `fly apps create argus-axl-a` + `argus-axl-b`; deploy each.
+4. Cross-set Fly secrets so each peer knows the other's pubkey/IPv6:
+   - `fly secrets set EXECUTION_PEER=<node-b-yggdrasil-ipv6> -a argus-axl-a`
+   - `fly secrets set SIGNAL_PEER=<node-a-yggdrasil-ipv6> -a argus-axl-b`
+   - `fly secrets set SIGNAL_PEER=<node-a-yggdrasil-ipv6> -a argus-shim`
+   - `fly secrets set AXL_NODE_A_API=argus-axl-a.internal:9002 -a argus-shim`
+5. Smoke: `fly ssh console -a argus-shim -C 'curl argus-axl-a.internal:9002/health'` → 200.
+6. Re-register KH workflow with `SHIM_URL=https://argus-shim.fly.dev`.
+
+**Acceptance**: `kh wf run --wait` from a separate machine (no laptop AXL) returns `swapTxHash` within 90s.
+
+**Bail to Option 1 if**:
+- Yggdrasil-over-6PN handshake doesn't connect within 1h.
+- Inter-app round-trip p95 >100ms (would eat too much of 90s budget).
+- Fly 6PN DNS resolution flaky during smoke.
+
+Bail = merge AXL daemon back into `Dockerfile.shim` via tini/supervisord, set `AXL_NODE_A_API=127.0.0.1:9002`, redeploy single `argus-shim`. Lose Gensyn narrative but ship demo.
+
+**Status (2026-04-29)**: shim half done — `Dockerfile.shim` + `fly.shim.toml` + `scripts/deploy-shim.sh` shipped (commit `088a149`). AXL apps + cross-peer secrets pending.
+
+---
+
 ## Cross-Cutting Seams
 
 ### KeeperHub ↔ AXL async bridge
@@ -385,6 +438,9 @@ Off-chain: `processResponse(provider, chatId, **exact raw bytes**)` → `true`. 
 
 ### RPC fallback
 Every chain has `_BACKUP` RPC env. `config.ts` retries on backup, increments failCount, logs alert.
+
+### AXL deploy topology (P16 — locked Option 2)
+Three Fly apps (`argus-shim`, `argus-axl-a`, `argus-axl-b`) in same region. Public TLS only on `argus-shim`; AXL nodes private over Fly 6PN (`*.internal` IPv6/DNS). Yggdrasil pubkeys cross-injected as Fly secrets (`SIGNAL_PEER`, `EXECUTION_PEER`). Shim dials `argus-axl-a.internal:9002`. Bails to Option 1 (collapse into single image) per scope-cut ladder if 6PN peering or DNS flakes.
 
 ### EIP-712 domain (frozen in P3)
 `{ name:"ArgusVault", version:"1", chainId:1301, verifyingContract:VAULT_ADDRESS }` + `SwapTag { bytes32 chatIdHash, bytes32 outputHash, uint256 nonce, bytes32 requestId, address tokenIn, address tokenOut, uint256 amountIn }`. Identical in Solidity (`_hashTypedDataV4`) and TypeScript (`viem.signTypedData`).
@@ -400,6 +456,7 @@ Every chain has `_BACKUP` RPC env. `config.ts` retries on backup, increments fai
 | 3 | P15 Demo UI | 6h | Polish only | behind on May 4 |
 | 4 | AXL >2 nodes | — | Keep exactly 2 | always |
 | 5 | P11 ENS subname | 2h impl | Drops $750–$1.25K (ENS) | Namestone approval >48h late |
+| 6 | P16 Option 2 → Option 1 (collapse AXL+shim into one Fly app) | 2h saved | Weakens Gensyn p2p narrative; still ships demo | Yggdrasil-over-6PN handshake fails 1h, OR inter-app p95 >100ms, OR Fly 6PN DNS flaky |
 
 **Non-cuttable (codex MEDIUM lock):**
 - P9 KeeperHub workflow run proof
@@ -419,6 +476,7 @@ Every chain has `_BACKUP` RPC env. `config.ts` retries on backup, increments fai
 | Namestone >48h pending | Drop ENS, raw EOA fallback |
 | 0G Galileo RPC down >2h | Switch to `ZEROG_RPC_BACKUP`; if both down, mock `processResponse()` with stored fixture (note as known caveat) |
 | AXL remote-host p95 >5s in P7 | Collapse to single host for demo |
+| P16 Fly 6PN peering broken / inter-app p95 >100ms | Apply scope-cut #6 (Option 2 → Option 1 collapse) |
 | `kh auth login` blocked | `KH_API_KEY` direct REST mode |
 | Unichain swap consistently failing | Fall back to Sepolia (chain 11155111), PoolManager `0xE03A1074c86CFeDd5C142C4F04F1a1536e203543` |
 | Any phase >1.5× estimate | Triage: mock the broken component, file as known caveat |
