@@ -20,8 +20,9 @@ const REQUEST_ID_RE = /^0x[0-9a-fA-F]{64}$/;
 
 export function loadShimConfig(source: NodeJS.ProcessEnv = process.env): { cfg: ShimConfig; env: Env } {
   const env = loadEnv(source);
-  const peer = source.SIGNAL_PEER;
-  if (!peer) throw new Error("SIGNAL_PEER required (Node A Yggdrasil pubkey or IPv6)");
+  // SIGNAL_PEER is checked at /trigger time, not boot — lets shim deploy
+  // (and pass /health checks) before AXL Node A's Yggdrasil ID is known.
+  const peer = source.SIGNAL_PEER ?? "";
   return {
     env,
     cfg: {
@@ -65,6 +66,10 @@ export function createShimApp(deps: ShimAppDeps): express.Express {
   app.post("/trigger", (req: Request, res: Response, next: NextFunction) => {
     void (async () => {
       try {
+        if (!cfg.signalPeer) {
+          res.status(503).json({ error: "signal_peer_unset", detail: "SIGNAL_PEER not configured (P7 AXL wiring pending)" });
+          return;
+        }
         const body = triggerBodySchema.parse(req.body ?? {});
         // Normalize hex casing so KH retries with mixed-case ids hit the same
         // store entry (codex MED).

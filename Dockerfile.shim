@@ -1,0 +1,27 @@
+# P9 deploy — Argus shim on Fly.io.
+# Build context = argus/ repo root (workspaces + @argus/shared path alias
+# need full monorepo). Runs via tsx — no compile step (matches local dev).
+FROM node:20-alpine
+WORKDIR /app
+RUN apk add --no-cache tini
+
+# Copy ALL workspace package.json stubs so `npm ci` can resolve the full
+# workspace graph (root package.json's `workspaces` lists signal/execution/
+# shim/packages/*). Skipping any of them produces a partial install where
+# shim's deps (express/zod) silently miss hoisting into /app/node_modules.
+COPY package.json package-lock.json tsconfig.base.json ./
+COPY signal/package.json signal/
+COPY execution/package.json execution/
+COPY shim/package.json shim/
+COPY packages/shared/package.json packages/shared/
+RUN npm ci --no-audit --no-fund
+
+# Source for shim + shared only (signal/execution not needed at runtime).
+COPY packages/shared ./packages/shared
+COPY shim ./shim
+
+ENV NODE_ENV=production
+ENV SHIM_PORT=8787
+EXPOSE 8787
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["node", "--import", "tsx", "shim/src/index.ts"]
