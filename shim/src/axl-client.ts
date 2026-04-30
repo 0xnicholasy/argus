@@ -23,11 +23,19 @@ export function createShimAxlClient({ apiAddr, fetchImpl = fetch }: ShimAxlClien
   const base = `http://${apiAddr}`;
 
   return {
+    // AXL daemon protocol per 04-axl-multinode/axl/docs/api.md:
+    //   POST /send: X-Destination-Peer-Id header + raw body
+    //   GET  /recv: 204 empty | 200 with X-From-Peer-Id header + raw body
+    // SwarmMessage stays JSON-serialized inside the raw body so the existing
+    // parseSwarmMessage / SignalPayload contracts are unchanged.
     async send(peer, msg) {
       const res = await fetchImpl(`${base}/send`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ peer, payload: msg }),
+        headers: {
+          "content-type": "application/octet-stream",
+          "X-Destination-Peer-Id": peer,
+        },
+        body: JSON.stringify(msg),
       });
       if (!res.ok) {
         const text = await res.text();
@@ -41,11 +49,10 @@ export function createShimAxlClient({ apiAddr, fetchImpl = fetch }: ShimAxlClien
         const res = await fetchImpl(`${base}/recv`, { signal: ctrl.signal });
         if (res.status === 204) return null;
         if (!res.ok) throw new Error(`AXL /recv ${res.status}`);
-        const body = (await res.json()) as { peer?: string; payload: unknown };
-        if (!body.peer || typeof body.peer !== "string") {
-          throw new Error("AXL /recv response missing peer field");
-        }
-        return { peer: body.peer, payload: parseSwarmMessage(body.payload) };
+        const peer = res.headers.get("X-From-Peer-Id");
+        if (!peer) throw new Error("AXL /recv response missing X-From-Peer-Id header");
+        const text = await res.text();
+        return { peer, payload: parseSwarmMessage(JSON.parse(text)) };
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") return null;
         throw e;
