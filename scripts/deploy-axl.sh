@@ -35,8 +35,24 @@ AXL_BIN_OUT="${ARGUS_ROOT}/bin/axl-node"
 APP_A="${APP_A:-argus-axl-a}"
 APP_B="${APP_B:-argus-axl-b}"
 FLY_REGION="${FLY_REGION:-iad}"
-KEY_A="${ARGUS_ROOT}/signal/node-a.pem"
-KEY_B="${ARGUS_ROOT}/execution/node-b.pem"
+# Cloud keys are kept separate from the local-dev placeholders in
+# signal/ and execution/ — those are committed text markers, not real
+# PEMs. .axl-keys/ is gitignored.
+KEY_DIR="${ARGUS_ROOT}/.axl-keys"
+KEY_A="${KEY_DIR}/node-a.pem"
+KEY_B="${KEY_DIR}/node-b.pem"
+
+ensure_keys() {
+  mkdir -p "${KEY_DIR}"
+  chmod 700 "${KEY_DIR}"
+  for k in "${KEY_A}" "${KEY_B}"; do
+    if [ ! -s "${k}" ]; then
+      echo "Generating ed25519 PKCS8 PEM at ${k}" >&2
+      openssl genpkey -algorithm ED25519 -out "${k}"
+      chmod 600 "${k}"
+    fi
+  done
+}
 
 require() { command -v "$1" >/dev/null 2>&1 || { echo "ERROR: $1 not installed" >&2; exit 1; }; }
 
@@ -65,8 +81,10 @@ NODE_B_YGG_IPV6="${NODE_B_YGG_IPV6:-}"
 #   match via Go encoding/json; PascalCase mirrors upstream node-config.json).
 # - tcp_port/api_port/bridge_addr are ApiConfig fields (explicit lowercase JSON
 #   tags). `api_addr` is NOT a real field — it would be silently ignored.
-# - bridge_addr="" makes the API bind dual-stack (":9002"), which is required
-#   so Fly 6PN can route argus-axl-{a,b}.internal:<port> to the process.
+# - bridge_addr="[::]" binds the API on IPv6 all-interfaces so Fly 6PN can
+#   route argus-axl-{a,b}.internal:<port> to it. Empty string would NOT
+#   override the default (applyOverrides skips zero-values), so the API
+#   would silently stay on 127.0.0.1.
 config_a() {
   cat <<'JSON'
 {
@@ -75,7 +93,7 @@ config_a() {
   "Peers": [],
   "tcp_port": 7000,
   "api_port": 9002,
-  "bridge_addr": ""
+  "bridge_addr": "[::]"
 }
 JSON
 }
@@ -88,20 +106,31 @@ config_b() {
   "Peers": ["tls://argus-axl-a.internal:9101"],
   "tcp_port": 7000,
   "api_port": 9003,
-  "bridge_addr": ""
+  "bridge_addr": "[::]"
 }
 JSON
 }
 
 ensure_app() {
-  local app="$1" cfg="$2"
-  if fly apps list --json 2>/dev/null | grep -q "\"Name\":\"${app}\""; then
-    echo "App ${app} exists; skipping launch." >&2
+  # Avoid `fly launch` here — it rewrites fly.toml in place and injects a
+  # public [http_service] block, which is the opposite of what we want for
+  # 6PN-only AXL nodes. `fly apps create` is the no-config-touch primitive.
+  local app="$1"
+  if fly apps list --json 2>/dev/null | grep -qE "\"Name\":\\s*\"${app}\""; then
+    echo "App ${app} exists; skipping create." >&2
     return
   fi
-  LAUNCH_ARGS=(--name "${app}" --region "${FLY_REGION}" --copy-config --no-deploy --yes)
-  [ -n "${FLY_ORG:-}" ] && LAUNCH_ARGS+=(--org "${FLY_ORG}")
-  fly launch --config "${cfg}" --dockerfile Dockerfile.axl "${LAUNCH_ARGS[@]}"
+  CREATE_ARGS=(--name "${app}")
+  [ -n "${FLY_ORG:-}" ] && CREATE_ARGS+=(--org "${FLY_ORG}")
+  fly apps create "${CREATE_ARGS[@]}"
+}
+
+# macOS BSD `base64` wraps at 76 chars — embedded newlines break the
+# dotenv stream `fly secrets import` consumes (each line becomes a
+# separate KEY=VALUE entry, so only the first chunk lands as the value).
+# `tr -d '\n'` flattens to a single line on both BSD and GNU.
+b64_inline() {
+  base64 | tr -d '\n'
 }
 
 stage_secrets() {
@@ -113,18 +142,20 @@ stage_secrets() {
   # Pipe via `fly secrets import` so neither the PEM nor the config JSON
   # ends up in shell history or `ps` output (codex MED hardening).
   printf 'NODE_KEY_PEM=%s\nNODE_CONFIG_JSON=%s\n' \
-    "$(cat "${key_file}" | base64)" \
-    "$(printf '%s' "${config_payload}" | base64)" \
+    "$(b64_inline < "${key_file}")" \
+    "$(printf '%s' "${config_payload}" | b64_inline)" \
     | fly secrets import --app "${app}" --stage
 }
 
 cmd_launch() {
   require fly
+  require openssl
   fly auth whoami >/dev/null
   if [ ! -x "${AXL_BIN_OUT}" ]; then
     echo "axl-node binary missing — running 'build' first." >&2
     cmd_build
   fi
+  ensure_keys
   ensure_app "${APP_A}" fly.axl-a.toml
   ensure_app "${APP_B}" fly.axl-b.toml
   stage_secrets "${APP_A}" "${KEY_A}" "$(config_a)"
@@ -142,6 +173,8 @@ cmd_redeploy() {
 
 cmd_secrets() {
   require fly
+  require openssl
+  ensure_keys
   stage_secrets "${APP_A}" "${KEY_A}" "$(config_a)"
   stage_secrets "${APP_B}" "${KEY_B}" "$(config_b)"
   fly deploy --app "${APP_A}" --config fly.axl-a.toml --remote-only --strategy=immediate

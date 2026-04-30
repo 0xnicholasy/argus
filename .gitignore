@@ -14,3 +14,4 @@ typechain-types/
 coverage/
 .playwright-cli/
 bin/axl-node
+.axl-keys/

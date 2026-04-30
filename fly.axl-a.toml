@@ -1,11 +1,12 @@
-# P16 — argus-axl-a (AXL Node A, Signal). Private only — no public services.
+# P16 — argus-axl-a (AXL Node A, Signal). Private only — no public TLS.
 #
 # Reachable from sibling Fly apps via Fly 6PN at:
-#   argus-axl-a.internal:9002    (AXL JSON API — dialed by argus-shim)
-#   tls://argus-axl-a.internal:9101  (Yggdrasil tls listener — dialed by argus-axl-b)
+#   argus-axl-a.internal:9002          AXL JSON API (dialed by argus-shim)
+#   tls://argus-axl-a.internal:9101    Yggdrasil tls listener (dialed by axl-b)
 #
-# Runtime config + key are injected via secrets NODE_CONFIG_JSON and
-# NODE_KEY_PEM (see scripts/deploy-axl.sh). Image is shared with axl-b.
+# Note: do NOT add an [http_service] block — Fly's launcher inserts one
+# automatically when invoked with `fly launch`, which wires a public TLS
+# edge we don't want. deploy-axl.sh uses `fly apps create` to avoid that.
 
 app = 'argus-axl-a'
 primary_region = 'iad'
@@ -13,8 +14,6 @@ primary_region = 'iad'
 [build]
   dockerfile = 'Dockerfile.axl'
 
-# Bind to all interfaces; Fly 6PN routes argus-axl-a.internal to whichever
-# IPv6 the process listens on.
 [env]
   AXL_ROLE = 'signal'
 
@@ -23,10 +22,12 @@ primary_region = 'iad'
   cpus = 1
   memory_mb = 256
 
-# 6PN-only TCP check. Fails if axl-node hasn't bound 9002 within 30s.
+# 6PN-only TCP check on the API port. ports = [] keeps Fly from
+# allocating a public anycast IP for this service.
 [[services]]
   protocol = 'tcp'
   internal_port = 9002
+  ports = []
 
   [[services.tcp_checks]]
     interval = '15s'
