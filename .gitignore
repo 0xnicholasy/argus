@@ -16,3 +16,4 @@ coverage/
 bin/axl-node
 .axl-keys/
 **/tsconfig.tsbuildinfo
+scripts/restart-execution.sh
