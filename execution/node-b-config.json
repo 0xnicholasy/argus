@@ -1,7 +1,7 @@
 {
   "private_key_path": "node-b.pem",
   "listen": ["tls://127.0.0.1:9102"],
-  "api_addr": "127.0.0.1:9003",
+  "api_port": 9003,
   "tcp_port": 7000,
   "peers": ["tls://127.0.0.1:9101"],
   "comment": "AXL Node B (Execution). Distinct keypair from node-a.pem (codex CRITICAL — same key = same Yggdrasil pubkey/IPv6 = broken routing). tcp_port:7000 mandatory."
