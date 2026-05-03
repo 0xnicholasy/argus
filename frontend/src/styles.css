@@ -331,3 +331,162 @@ code, .mono {
   flex-wrap: wrap;
   gap: 12px;
 }
+
+/* ---------- Header verify badge ---------- */
+.header-badges { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+
+.verify-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  cursor: help;
+}
+.verify-badge.idle { color: var(--muted); }
+.verify-badge.ok   { color: var(--green); border-color: rgba(74, 222, 128, 0.5); background: rgba(74, 222, 128, 0.08); }
+.verify-badge.warn { color: var(--amber); border-color: rgba(251, 191, 36, 0.5); background: rgba(251, 191, 36, 0.08); }
+
+/* ---------- Sponsor strip ---------- */
+.sponsors {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+@media (max-width: 980px) { .sponsors { grid-template-columns: repeat(2, 1fr); } }
+
+.sponsor {
+  background: rgba(7, 9, 26, 0.4);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.sponsor-name {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.sponsor-detail { font-size: 12px; word-break: break-all; }
+
+/* ---------- Flag chips ---------- */
+.flag-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.flag-chips-label {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.flag-chip {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  color: var(--amber);
+  background: rgba(251, 191, 36, 0.08);
+  cursor: help;
+}
+
+/* ---------- Event log ---------- */
+.event-legend {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+
+.event-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.event {
+  display: grid;
+  grid-template-columns: 64px 24px 1fr;
+  align-items: start;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(7, 9, 26, 0.4);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.event.tone-info { border-left-color: var(--cyan); }
+.event.tone-ok   { border-left-color: var(--green); }
+.event.tone-warn { border-left-color: var(--amber); }
+.event.tone-fail { border-left-color: var(--red); }
+
+.event-t { color: var(--muted); padding-top: 2px; }
+.event-icon {
+  font-size: 14px;
+  color: var(--cyan);
+  padding-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.event.tone-ok   .event-icon { color: var(--green); }
+.event.tone-warn .event-icon { color: var(--amber); }
+.event.tone-fail .event-icon { color: var(--red); }
+
+.event-body { display: flex; flex-direction: column; gap: 4px; }
+.event-label { font-weight: 600; color: var(--text); }
+.event-detail { color: var(--muted); font-size: 12px; }
+
+.event-evidence { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.event-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(7, 9, 26, 0.6);
+}
+.event-chip-k { color: var(--muted); text-transform: lowercase; }
+.event-chip-v { color: var(--text); }
+
+/* ---------- Vault delta ---------- */
+.balance-diff {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+.balance-diff.up   { color: var(--green); background: rgba(74, 222, 128, 0.1); }
+.balance-diff.down { color: var(--red);   background: rgba(248, 113, 113, 0.1); }
+.balance-diff.zero { color: var(--muted); }
+
+.balance-banner {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(74, 222, 128, 0.08);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  color: var(--green);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}

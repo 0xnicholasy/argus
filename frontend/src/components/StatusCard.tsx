@@ -33,29 +33,37 @@ export function StatusCard({ entry, busy, onTrigger, error }: Props) {
 
       {entry && (
         <div className="kv" style={{ marginTop: 16 }}>
-          <div className="k">Request ID</div>
+          <div className="k" title="Shim-minted bytes32 used end-to-end across the AXL swarm and emitted on-chain in RebalanceExecuted.">
+            requestId
+          </div>
           <div className="v mono">{entry.requestId}</div>
           {entry.chatId && (
             <>
-              <div className="k">Chat ID</div>
+              <div className="k" title="0G Compute TEE session id. Pair with outputHash to reproduce verification independently.">
+                0G chatId
+              </div>
               <div className="v mono">{entry.chatId}</div>
             </>
           )}
           {entry.outputHash && (
             <>
-              <div className="k">Output Hash</div>
+              <div className="k" title="SHA-256 of the raw model bytes. Same hash is emitted on-chain and matches the bytes stored in 0G Storage.">
+                output hash
+              </div>
               <div className="v mono">{entry.outputHash}</div>
             </>
           )}
           {entry.storageRoot && (
             <>
-              <div className="k">Storage Root</div>
+              <div className="k" title="0G Storage root. Anyone can fetch the envelope by this root, recompute the SHA-256, and confirm the AI output was not altered.">
+                storage root
+              </div>
               <div className="v mono">{entry.storageRoot}</div>
             </>
           )}
           {entry.reason && (
             <>
-              <div className="k">Reason</div>
+              <div className="k">reason</div>
               <div className="v">{entry.reason}</div>
             </>
           )}

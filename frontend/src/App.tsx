@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { getHealth, getStatus, trigger } from "./api";
-import { Pipeline } from "./components/Pipeline";
+import { EventLog } from "./components/EventLog";
 import { StatusCard } from "./components/StatusCard";
 import { VaultCard } from "./components/VaultCard";
 import { ResultCard } from "./components/ResultCard";
+import { SponsorStrip } from "./components/SponsorStrip";
+import { FlagChips, VerifyBadge } from "./components/VerifyBadge";
 import type { ShimEntry } from "./types";
 
 const POLL_INTERVAL = 1500;
@@ -15,6 +17,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [health, setHealth] = useState<"up" | "down" | "unknown">("unknown");
   const [vaultRefresh, setVaultRefresh] = useState(0);
+  const [vaultSnapshot, setVaultSnapshot] = useState(0);
   const pollRef = useRef<number | null>(null);
   // Generation guard: in-flight getStatus() resolving after re-trigger must not
   // overwrite the new entry. Bumped on every trigger; poll callbacks bail if stale.
@@ -72,6 +75,8 @@ export function App() {
     setError(null);
     stopPoll();
     genRef.current += 1;
+    // snapshot vault BEFORE the run so the delta diff is meaningful
+    setVaultSnapshot((n) => n + 1);
     try {
       const created = await trigger();
       setEntry(created);
@@ -93,16 +98,25 @@ export function App() {
           <div className="tagline">Verifiable AI DeFi Keeper · ETHGlobal Open Agents 2026</div>
         </div>
         <div className="spacer" />
-        <span className={`badge ${health === "up" ? "live" : health === "down" ? "offline" : ""}`}>
-          {health === "up" ? "Shim Online" : health === "down" ? "Shim Offline" : "Connecting…"}
-        </span>
+        <div className="header-badges">
+          <VerifyBadge entry={entry} />
+          <span className={`badge ${health === "up" ? "live" : health === "down" ? "offline" : ""}`}>
+            {health === "up" ? "Shim Online" : health === "down" ? "Shim Offline" : "Connecting…"}
+          </span>
+        </div>
       </header>
 
-      <Pipeline entry={entry} />
+      <SponsorStrip />
+
+      <FlagChips />
+
+      <div style={{ marginTop: 20 }}>
+        <EventLog entry={entry} />
+      </div>
 
       <div className="grid" style={{ marginTop: 20 }}>
         <StatusCard entry={entry} busy={busy} onTrigger={onTrigger} error={error} />
-        <VaultCard refreshKey={vaultRefresh} />
+        <VaultCard refreshKey={vaultRefresh} snapshotKey={vaultSnapshot} />
         <div className="full">
           <ResultCard entry={entry} />
         </div>
@@ -112,7 +126,7 @@ export function App() {
         <div>
           KeeperHub Shim → AXL Swarm → 0G Compute (TEEML) → 0G Storage → Uniswap on Unichain Sepolia
         </div>
-        <div>localhost demo · single-host AXL mesh</div>
+        <div>local AXL mesh · single-host demo</div>
       </footer>
     </div>
   );
