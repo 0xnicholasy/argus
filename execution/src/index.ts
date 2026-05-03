@@ -55,6 +55,14 @@ function logError(event: string, fields: Record<string, unknown>): void {
 async function quoteAmountOut(cfg: ExecutionConfig, tokenIn: Hex, tokenOut: Hex, amountIn: bigint): Promise<bigint> {
   const quoterAddr = process.env.UNISWAP_QUOTER_V2;
   if (!quoterAddr) {
+    if (process.env.QUOTER_OPTIONAL === "1") {
+      console.error(JSON.stringify({
+        level: "warn",
+        event: "execution.quoter_skipped",
+        reason: "UNISWAP_QUOTER_V2 not set; using amountOutMin=1 (demo mode)",
+      }));
+      return 1n;
+    }
     throw new Error("UNISWAP_QUOTER_V2 required to fetch fresh amountOut for slippage protection");
   }
   const provider = buildVaultProvider(cfg);
@@ -211,7 +219,15 @@ async function main(): Promise<void> {
     }
     if (!envelope) continue;
 
-    if (envelope.peer !== peer) {
+    // AXL daemon's X-From-Peer-Id is derived via Yggdrasil Address.GetKey(),
+    // which only recovers ~14 bytes of pubkey prefix; the tail is 0xFF padding.
+    // Compare by prefix (first 28 hex chars = 14 bytes) — Yggdrasil's own
+    // identity guarantee. listener.go truncates display to 16 hex; we use 28
+    // for tighter binding while still matching reality of the protocol.
+    const PEER_PREFIX_LEN = 28;
+    const fromPrefix = envelope.peer.slice(0, PEER_PREFIX_LEN).toLowerCase();
+    const expectPrefix = peer.slice(0, PEER_PREFIX_LEN).toLowerCase();
+    if (fromPrefix !== expectPrefix) {
       logError("execution.peer_mismatch", { from: envelope.peer, expected: peer, requestId: envelope.payload.requestId });
       continue;
     }

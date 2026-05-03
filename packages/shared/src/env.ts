@@ -27,6 +27,11 @@ export const envSchema = z.object({
 
   ZEROG_PROVIDER_ADDRESS: blankToUndef(addr.optional()),
   ZEROG_MODEL: blankToUndef(nonEmpty.default("qwen/qwen-2.5-7b-instruct")),
+  // Demo-only escape hatch for broken provider TEE signing (see .env.example).
+  ZEROG_DEV_BYPASS_VERIFY: z.preprocess(
+    (v) => (typeof v === "string" && /^(1|true|yes)$/i.test(v.trim())),
+    z.boolean(),
+  ),
 
   KH_API_KEY: blankToUndef(nonEmpty.optional()),
   KH_WORKFLOW_ID: blankToUndef(nonEmpty.optional()),

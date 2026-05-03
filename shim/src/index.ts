@@ -8,6 +8,7 @@
 // A watchdog ages out pending requests past pollBudgetMs.
 
 import { randomBytes } from "node:crypto";
+import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { ZodError } from "zod";
 import { hexlify } from "ethers";
@@ -58,6 +59,8 @@ export interface ShimAppDeps {
 export function createShimApp(deps: ShimAppDeps): express.Express {
   const { store, axl, cfg } = deps;
   const app = express();
+  // Demo frontend on localhost:3000 hits us cross-origin.
+  app.use(cors());
   app.use(express.json({ limit: "32kb" }));
 
   app.get("/health", (_req: Request, res: Response) => {

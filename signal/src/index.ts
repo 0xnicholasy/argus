@@ -10,6 +10,8 @@ import { runInference, type VaultStatePrompt } from "./infer.js";
 import { persistEnvelope } from "./storage.js";
 import { createAxlClient } from "./axl.js";
 
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
 export interface SignalRunResult {
   requestId: Hex;
   chatId: string;
@@ -90,6 +92,17 @@ function logEvent(event: string, fields: Record<string, unknown>): void {
 
 function logError(event: string, fields: Record<string, unknown>): void {
   console.error(JSON.stringify({ level: "error", event, ...fields }));
+}
+
+function requireAddressEnv(name: string): Hex {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} required for signal prompt`);
+  }
+  if (!ADDRESS_RE.test(value)) {
+    throw new Error(`${name} must be a 0x address`);
+  }
+  return value as Hex;
 }
 
 /**
@@ -178,11 +191,18 @@ async function runRecvLoop(): Promise<never> {
     logEvent("signal.trigger_received", { requestId: msg.requestId });
 
     try {
-      // Vault snapshot is hackathon-stub (per P14 plan) — empty balances +
-      // current block are good enough until the demo wires a real reader.
+      // Vault snapshot is hackathon-stub. Empty balances would let the model
+      // hallucinate token addresses → schema rejects (codex HIGH on P4).
+      // Seed with the demo's funded WETH/USDC pair so the model picks from
+      // real addresses. Pulled from FUND_TOKEN_* (already used by fund-vault).
+      const usdc = requireAddressEnv("FUND_TOKEN_USDC");
+      const weth = requireAddressEnv("FUND_TOKEN_WETH");
       const state: VaultStatePrompt = {
         vaultAddress: vaultAddrEnv as Hex,
-        tokenBalances: [],
+        tokenBalances: [
+          { token: weth, symbol: "WETH", balance: "10000000000000000" },
+          { token: usdc, symbol: "USDC", balance: "10000000" },
+        ],
         unichainBlock: 0,
       };
       await runOnce(state, peer, cfg, { requestId: msg.requestId as Hex });

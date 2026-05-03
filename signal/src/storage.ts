@@ -1,6 +1,7 @@
 // Persist the StorageEnvelope to 0G Storage and return rootHash.
 // The envelope contains rawBytes verbatim — execution node re-hashes those exact bytes.
 
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -52,7 +53,24 @@ export async function persistEnvelope(cfg: SignalConfig, input: PersistInput): P
     ) => Promise<[{ txHash: string; rootHash: string }, Error | null]>;
     const upload = indexer.upload.bind(indexer) as unknown as UploadFn;
     const [result, err] = await upload(file, cfg.storage.rpcUrl, wallet);
-    if (err !== null) throw new Error(`0G Storage upload failed: ${err.message}`);
+    if (err !== null) {
+      if (process.env.STORAGE_FALLBACK_ON_FAIL === "1") {
+        const stubRoot = "0x" + createHash("sha256").update(json).digest("hex");
+        const fbDir = process.env.STORAGE_FALLBACK_DIR ?? "/tmp/argus-storage";
+        const { mkdirSync, writeFileSync: wfs } = await import("node:fs");
+        mkdirSync(fbDir, { recursive: true });
+        wfs(join(fbDir, `${stubRoot}.json`), json, { encoding: "utf8" });
+        console.error(JSON.stringify({
+          level: "warn",
+          event: "signal.storage_fallback",
+          reason: err.message,
+          stubRoot,
+          fallbackDir: fbDir,
+        }));
+        return { storageRoot: stubRoot, txHash: "0x" + "0".repeat(64) };
+      }
+      throw new Error(`0G Storage upload failed: ${err.message}`);
+    }
     return { storageRoot: result.rootHash, txHash: result.txHash };
   } finally {
     rmSync(dir, { recursive: true, force: true });
