@@ -41,6 +41,11 @@ export const envSchema = z.object({
 
   UNIVERSAL_ROUTER: blankToUndef(addr.default("0xf70536b3bcc1bd1a972dc186a2cf84cc6da6be5d")),
   VAULT_ADDRESS: blankToUndef(addr.optional()),
+
+  // Signal worker pushes receipts/replies to this URL (D1: webhook-based shim).
+  // Optional at boot — if blank, signal logs and drops (lets local single-shot
+  // runs succeed without a shim deployed).
+  SHIM_URL: blankToUndef(url.optional()),
 });
 
 export type Env = z.infer<typeof envSchema>;

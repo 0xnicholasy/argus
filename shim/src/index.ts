@@ -3,14 +3,15 @@
 // AXL /send, return 202 immediately. KeeperHub workflow polls GET /status/:id
 // until status flips to "done" (with swapTxHash) or "rejected".
 //
-// A single background loop drains AXL /recv and routes receipts to the store
-// keyed by requestId. A watchdog ages out pending requests past pollBudgetMs.
+// POST /receipt → signal worker pushes receipt/reply SwarmMessages here (D1:
+// webhook-based, replaces the old /recv-drain race with the signal worker).
+// A watchdog ages out pending requests past pollBudgetMs.
 
 import { randomBytes } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { ZodError } from "zod";
 import { hexlify } from "ethers";
-import { loadEnv } from "@argus/shared";
+import { loadEnv, parseSwarmMessage } from "@argus/shared";
 import type { Env, Hex, SwarmMessage } from "@argus/shared";
 import { createShimAxlClient, type ShimAxlClient } from "./axl-client.js";
 import { ShimStore } from "./store.js";
@@ -113,6 +114,66 @@ export function createShimApp(deps: ShimAppDeps): express.Express {
     })();
   });
 
+  app.post("/receipt", (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const msg = parseSwarmMessage(req.body ?? {});
+      if (msg.kind !== "receipt" && msg.kind !== "reply") {
+        res.status(400).json({ error: "unsupported_kind", kind: msg.kind });
+        return;
+      }
+
+      const cached = store.get(msg.requestId);
+      if (!cached) {
+        // Stranger receipt or post-restart — nothing to update.
+        res.status(404).json({ error: "unknown_requestId", requestId: msg.requestId });
+        return;
+      }
+      if (cached.status !== "pending") {
+        res.status(200).json(cached);
+        return;
+      }
+
+      if (msg.kind === "receipt") {
+        if (msg.swapTxHash && msg.chatId && msg.outputHash && msg.storageRoot) {
+          store.markDone(msg.requestId, {
+            swapTxHash: msg.swapTxHash,
+            chatId: msg.chatId,
+            outputHash: msg.outputHash,
+            storageRoot: msg.storageRoot,
+          });
+          logEvent("shim.completed", {
+            requestId: msg.requestId,
+            swapTxHash: msg.swapTxHash,
+            chatId: msg.chatId,
+          });
+        } else {
+          // Fail closed on malformed receipts (codex HIGH from old loop).
+          store.markRejected(msg.requestId, "malformed_receipt");
+          logError("shim.malformed_receipt", {
+            requestId: msg.requestId,
+            haveSwapTxHash: Boolean(msg.swapTxHash),
+            haveChatId: Boolean(msg.chatId),
+            haveOutputHash: Boolean(msg.outputHash),
+            haveStorageRoot: Boolean(msg.storageRoot),
+          });
+        }
+      } else {
+        if (msg.decision === "reject") {
+          store.markRejected(msg.requestId, "swarm_rejected");
+          logEvent("shim.rejected", { requestId: msg.requestId, chatId: msg.chatId });
+        } else {
+          store.markRejected(msg.requestId, "unhandled_reply");
+          logError("shim.unhandled_reply", { requestId: msg.requestId, decision: msg.decision });
+        }
+      }
+
+      const updated = store.get(msg.requestId);
+      res.status(200).json(updated);
+    } catch (err) {
+      next(err);
+    }
+  });
+
   app.get("/status/:requestId", (req: Request, res: Response) => {
     const raw = req.params.requestId;
     if (!raw || !REQUEST_ID_RE.test(raw)) {
@@ -138,76 +199,6 @@ export function createShimApp(deps: ShimAppDeps): express.Express {
   });
 
   return app;
-}
-
-export function startReceiptLoop(deps: ShimAppDeps): { stop: () => void } {
-  const { store, axl, cfg } = deps;
-  let running = true;
-
-  const loop = async (): Promise<void> => {
-    while (running) {
-      try {
-        const env = await axl.recv(cfg.pollIntervalMs);
-        if (!env) continue;
-        const msg = env.payload;
-        if (msg.kind !== "receipt" && msg.kind !== "reply") continue;
-
-        const cached = store.get(msg.requestId);
-        if (!cached) {
-          // Receipt for a request we don't know about (restart, stranger) — skip.
-          continue;
-        }
-        if (cached.status !== "pending") continue;
-
-        if (msg.kind === "receipt") {
-          if (msg.swapTxHash && msg.chatId && msg.outputHash && msg.storageRoot) {
-            store.markDone(msg.requestId, {
-              swapTxHash: msg.swapTxHash,
-              chatId: msg.chatId,
-              outputHash: msg.outputHash,
-              storageRoot: msg.storageRoot,
-            });
-            logEvent("shim.completed", {
-              requestId: msg.requestId,
-              swapTxHash: msg.swapTxHash,
-              chatId: msg.chatId,
-            });
-          } else {
-            // Codex HIGH: silently dropping malformed receipts wedged the
-            // request until the watchdog timed it out. Reject loudly instead.
-            store.markRejected(msg.requestId, "malformed_receipt");
-            logError("shim.malformed_receipt", {
-              requestId: msg.requestId,
-              haveSwapTxHash: Boolean(msg.swapTxHash),
-              haveChatId: Boolean(msg.chatId),
-              haveOutputHash: Boolean(msg.outputHash),
-              haveStorageRoot: Boolean(msg.storageRoot),
-            });
-          }
-        } else {
-          // kind === "reply"
-          if (msg.decision === "reject") {
-            store.markRejected(msg.requestId, "swarm_rejected");
-            logEvent("shim.rejected", { requestId: msg.requestId, chatId: msg.chatId });
-          } else {
-            // Unknown reply shape (no decision or decision="accept" with no
-            // receipt fields). Fail closed so the request does not hang.
-            store.markRejected(msg.requestId, "unhandled_reply");
-            logError("shim.unhandled_reply", {
-              requestId: msg.requestId,
-              decision: msg.decision,
-            });
-          }
-        }
-      } catch (e) {
-        logError("shim.recv_failed", { error: e instanceof Error ? e.message : String(e) });
-        await new Promise((r) => setTimeout(r, 500));
-      }
-    }
-  };
-
-  void loop();
-  return { stop: () => { running = false; } };
 }
 
 export function startWatchdog(deps: ShimAppDeps): { stop: () => void } {
@@ -238,7 +229,6 @@ async function main(): Promise<void> {
   const deps: ShimAppDeps = { store, axl, cfg };
 
   const app = createShimApp(deps);
-  const recv = startReceiptLoop(deps);
   const watchdog = startWatchdog(deps);
 
   const server = app.listen(cfg.port, () => {
@@ -253,7 +243,6 @@ async function main(): Promise<void> {
 
   const shutdown = (signal: string): void => {
     logEvent("shim.shutdown", { signal });
-    recv.stop();
     watchdog.stop();
     server.close(() => process.exit(0));
   };

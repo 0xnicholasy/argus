@@ -94,16 +94,10 @@ function logError(event: string, fields: Record<string, unknown>): void {
 
 /**
  * AXL Node A recv loop. Drains incoming SwarmMessages, dispatches `execute`
- * triggers (from the KeeperHub-facing shim) into the inference + propose flow
- * keyed by the original requestId.
- *
- * KNOWN RACE: in the cloud topology the shim ALSO drains Node A's /recv
- * looking for receipts/replies destined for KH polls. Both processes pop
- * from the same FIFO queue, so an "execute" trigger can be popped by the
- * shim (which drops non-receipt kinds) and lost. Mitigation lives in the
- * shim — see shim/src/index.ts startReceiptLoop. For demo determinism,
- * stop the shim recv loop while running this worker, OR migrate to the
- * planned /receipt webhook flow (signal worker pushes status to shim).
+ * triggers (from the KeeperHub-facing shim) into the inference + propose flow,
+ * and forwards `receipt`/`reply` messages from Node B back to the shim via
+ * POST {SHIM_URL}/receipt. This is the D1 webhook flow — the shim no longer
+ * drains /recv itself, so there is no race between two consumers.
  */
 async function runRecvLoop(): Promise<never> {
   const cfg = loadSignalConfig();
@@ -117,9 +111,14 @@ async function runRecvLoop(): Promise<never> {
   const vaultAddrEnv = process.env.VAULT_ADDRESS;
   if (!vaultAddrEnv) throw new Error("VAULT_ADDRESS required");
 
+  const shimUrl = cfg.env.SHIM_URL;
+  if (!shimUrl) {
+    logEvent("signal.shim_url_unset", { note: "receipt/reply messages will be logged then dropped" });
+  }
+
   const axl = createAxlClient({ apiAddr: cfg.axl.apiAddr });
 
-  logEvent("signal.started", { axl: cfg.axl.apiAddr, peer, vault: vaultAddrEnv });
+  logEvent("signal.started", { axl: cfg.axl.apiAddr, peer, vault: vaultAddrEnv, shimUrl: shimUrl ?? null });
 
   const seenRequestIds = new Set<string>();
 
@@ -133,8 +132,41 @@ async function runRecvLoop(): Promise<never> {
       continue;
     }
     if (!msg) continue;
+
+    if (msg.kind === "receipt" || msg.kind === "reply") {
+      if (!shimUrl) {
+        logError("signal.receipt_dropped_no_shim", { requestId: msg.requestId, kind: msg.kind });
+        continue;
+      }
+      try {
+        const r = await fetch(`${shimUrl.replace(/\/+$/, "")}/receipt`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(msg),
+        });
+        if (!r.ok) {
+          const body = await r.text().catch(() => "");
+          logError("signal.shim_post_failed", {
+            requestId: msg.requestId,
+            kind: msg.kind,
+            status: r.status,
+            body: body.slice(0, 200),
+          });
+        } else {
+          logEvent("signal.shim_forwarded", { requestId: msg.requestId, kind: msg.kind });
+        }
+      } catch (e) {
+        logError("signal.shim_post_error", {
+          requestId: msg.requestId,
+          kind: msg.kind,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+      continue;
+    }
+
     if (msg.kind !== "execute") {
-      // Receipts/replies belong to the shim's recv loop — drop quietly.
+      logEvent("signal.kind_skipped", { requestId: msg.requestId, kind: msg.kind });
       continue;
     }
     if (seenRequestIds.has(msg.requestId)) {
