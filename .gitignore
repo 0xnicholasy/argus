@@ -17,3 +17,8 @@ bin/axl-node
 .axl-keys/
 **/tsconfig.tsbuildinfo
 scripts/restart-execution.sh
+
+# Local-only artifacts (excluded by argus/CLAUDE.md scope rule)
+tasks/
+assets/logs/
+docs/latency.md
