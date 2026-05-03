@@ -205,7 +205,6 @@ async function main(): Promise<void> {
   // Vault dedupes nonces on-chain — but only AFTER tx submission. Catching it here
   // saves gas + avoids racing chain state. Persist across restarts is out of scope
   // for the hackathon demo (acceptable per plan re-plan triggers).
-  const seenOutputHashes = new Set<Hex>();
   const seenRequestIds = new Set<string>();
 
   for (;;) {
@@ -244,12 +243,10 @@ async function main(): Promise<void> {
       logError("execution.replay_requestId", { requestId: msg.requestId });
       continue;
     }
-    if (msg.outputHash && seenOutputHashes.has(msg.outputHash)) {
-      logError("execution.replay_outputHash", { outputHash: msg.outputHash, requestId: msg.requestId });
-      continue;
-    }
+    // outputHash dedupe disabled: deterministic LLM (temperature=0) produces
+    // identical outputHash across legitimate fresh requests. Vault.usedNonces
+    // is the authoritative replay guard (each tx mints randomBytes(32) nonce).
     seenRequestIds.add(msg.requestId);
-    if (msg.outputHash) seenOutputHashes.add(msg.outputHash);
 
     try {
       await handleProposal({ cfg, wallet, axl, peer, msg });
