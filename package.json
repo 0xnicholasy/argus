@@ -10,6 +10,7 @@
     "signal",
     "execution",
     "shim",
+    "frontend",
     "packages/*"
   ],
   "scripts": {
