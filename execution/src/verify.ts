@@ -10,7 +10,13 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Indexer } from "@0glabs/0g-ts-sdk";
-import { createZGComputeNetworkBroker } from "@0glabs/0g-serving-broker";
+// tsx/esbuild fails to link aliased re-exports in 0g-serving-broker's ESM
+// chunk; pull the CJS entry via createRequire (same workaround as signal/infer).
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const { createZGComputeNetworkBroker } =
+  require("@0glabs/0g-serving-broker") as
+  typeof import("@0glabs/0g-serving-broker");
 import { JsonRpcProvider, Wallet, keccak256 } from "ethers";
 import { parseStorageEnvelope, signalPayloadSchema } from "@argus/shared";
 import type { Hex, SignalPayload, StorageEnvelope } from "@argus/shared";

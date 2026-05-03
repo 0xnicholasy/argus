@@ -2,7 +2,14 @@
 // (do NOT JSON-reparse before hashing — codex CRITICAL on P4).
 // Calls processResponse() against the exact rawString passed to keccak256.
 
-import { createZGComputeNetworkBroker } from "@0glabs/0g-serving-broker";
+// tsx/esbuild fails to link aliased re-exports in @0glabs/0g-serving-broker's
+// rolled-up ESM chunk (`SyntaxError: ... does not provide an export named 'C'`).
+// Pull the CJS entry via createRequire — types still come from the package.
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const { createZGComputeNetworkBroker } =
+  require("@0glabs/0g-serving-broker") as
+  typeof import("@0glabs/0g-serving-broker");
 import { JsonRpcProvider, Wallet, keccak256, toUtf8Bytes } from "ethers";
 import OpenAI from "openai";
 import { signalPayloadSchema } from "@argus/shared";

@@ -191,20 +191,38 @@ async function runRecvLoop(): Promise<never> {
         requestId: msg.requestId,
         error: e instanceof Error ? e.message : String(e),
       });
-      // Forward the failure as a `reply` so the shim closes the request
-      // instead of waiting for a receipt that will never arrive.
-      try {
-        await axl.send(peer, {
-          requestId: msg.requestId,
-          kind: "reply",
-          decision: "reject",
-          timestamp: Math.floor(Date.now() / 1000),
-        });
-      } catch (sendErr) {
-        logError("signal.reject_send_failed", {
-          requestId: msg.requestId,
-          error: sendErr instanceof Error ? sendErr.message : String(sendErr),
-        });
+      // Forward the failure straight to the shim. AXL-to-Node-B would just be
+      // dropped (B drops non-propose kinds) — under D1, signal owns the
+      // shim-facing path for receipts AND for handler-side rejects.
+      const reject = {
+        requestId: msg.requestId,
+        kind: "reply" as const,
+        decision: "reject" as const,
+        timestamp: Math.floor(Date.now() / 1000),
+      };
+      if (!shimUrl) {
+        logError("signal.reject_drop_no_shim", { requestId: msg.requestId });
+      } else {
+        try {
+          const r = await fetch(`${shimUrl.replace(/\/+$/, "")}/receipt`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(reject),
+          });
+          if (!r.ok) {
+            const body = await r.text().catch(() => "");
+            logError("signal.reject_post_failed", {
+              requestId: msg.requestId,
+              status: r.status,
+              body: body.slice(0, 200),
+            });
+          }
+        } catch (sendErr) {
+          logError("signal.reject_post_error", {
+            requestId: msg.requestId,
+            error: sendErr instanceof Error ? sendErr.message : String(sendErr),
+          });
+        }
       }
     }
   }
